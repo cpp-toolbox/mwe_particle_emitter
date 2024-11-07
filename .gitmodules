@@ -1,0 +1,36 @@
+[submodule "scripts"]
+	path = scripts
+	url = git@github.com:cpp-toolbox/scripts.git
+[submodule "src/graphics/batcher"]
+	path = src/graphics/batcher
+	url = git@github.com:cpp-toolbox/batcher.git
+[submodule "src/graphics/shader_cache"]
+	path = src/graphics/shader_cache
+	url = git@github.com:cpp-toolbox/shader_cache.git
+[submodule "src/graphics/vertex_geometry"]
+	path = src/graphics/vertex_geometry
+	url = git@github.com:cpp-toolbox/vertex_geometry.git
+[submodule "src/graphics/shader_standard"]
+	path = src/graphics/shader_standard
+	url = git@github.com:cpp-toolbox/shader_standard.git
+[submodule "src/graphics/logger_component"]
+	path = src/graphics/logger_component
+	url = git@github.com:cpp-toolbox/logger_component.git
+[submodule "src/graphics/window"]
+	path = src/graphics/window
+	url = git@github.com:cpp-toolbox/window.git
+[submodule "src/input/glfw_lambda_callback_manager"]
+	path = src/input/glfw_lambda_callback_manager
+	url = git@github.com:cpp-toolbox/glfw_lambda_callback_manager.git
+[submodule "src/graphics/fps_camera"]
+	path = src/graphics/fps_camera
+	url = git@github.com:cpp-toolbox/fps_camera.git
+[submodule "assets/shaders"]
+	path = assets/shaders
+	url = git@github.com:cpp-toolbox/shaders.git
+[submodule "src/graphics/transform"]
+	path = src/graphics/transform
+	url = git@github.com:cpp-toolbox/transform.git
+[submodule "src/input/mouse"]
+	path = src/input/mouse
+	url = git@github.com:cpp-toolbox/mouse.git
