@@ -34,3 +34,18 @@
 [submodule "src/input/mouse"]
 	path = src/input/mouse
 	url = git@github.com:cpp-toolbox/mouse.git
+[submodule "src/animated_texture_atlas"]
+	path = src/graphics/animated_texture_atlas
+	url = git@github.com:cpp-toolbox/animated_texture_atlas.git
+[submodule "src/utility/texture_loader"]
+	path = src/utility/texture_loader
+	url = git@github.com:cpp-toolbox/texture_loader.git
+[submodule "src/graphics/particle_emitter"]
+	path = src/graphics/particle_emitter
+	url = git@github.com:cpp-toolbox/particle_emitter.git
+[submodule "src/graphics/texture_packer"]
+	path = src/graphics/texture_packer
+	url = git@github.com:cpp-toolbox/texture_packer.git
+[submodule "assets/texture_packer"]
+	path = assets/texture_packer
+	url = git@github.com:py-garden/texture_packer.git
