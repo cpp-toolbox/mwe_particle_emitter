@@ -1,23 +1,38 @@
+#include "utility/unique_id_generator/unique_id_generator.hpp"
 #include <random>
+
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image.h>
-#include "graphics/batcher/generated/batcher.hpp"
-#include "graphics/fps_camera/fps_camera.hpp"
-#include "graphics/shader_cache/shader_cache.hpp"
-#include "graphics/window/window.hpp"
-#include "graphics/vertex_geometry/vertex_geometry.hpp"
-#include "input/glfw_lambda_callback_manager/glfw_lambda_callback_manager.hpp"
-#include "utility/texture_loader/texture_loader.hpp"
+#include <stb_image_write.h>
+
 #include "graphics/particle_emitter/particle_emitter.hpp"
+#include "graphics/vertex_geometry/vertex_geometry.hpp"
 #include "graphics/texture_packer/texture_packer.hpp"
+#include "graphics/batcher/generated/batcher.hpp"
+#include "graphics/shader_cache/shader_cache.hpp"
+#include "graphics/fps_camera/fps_camera.hpp"
+#include "graphics/draw_info/draw_info.hpp"
+#include "graphics/window/window.hpp"
+
+#include "input/glfw_lambda_callback_manager/glfw_lambda_callback_manager.hpp"
+#include "input/input_state/input_state.hpp"
+
+#include "utility/texture_loader/texture_loader.hpp"
+#include "utility/resource_path/resource_path.hpp"
+#include "utility/print_utils/print_utils.hpp"
+
+#include <filesystem>
 
 class SmokeParticleEmitter {
   public:
     ParticleEmitter particle_emitter;
 
-    SmokeParticleEmitter(unsigned int max_particles)
+    SmokeParticleEmitter(std::function<void(int)> on_particle_spawn_callback,
+                         std::function<void(int)> on_particle_death_callback)
         : particle_emitter(life_span_lambda(), initial_velocity_lambda(), velocity_change_lambda(), scaling_lambda(),
-                           rotation_lambda(), spawn_delay_lambda(), max_particles) {}
+                           rotation_lambda(), spawn_delay_lambda(), on_particle_spawn_callback,
+                           on_particle_death_callback) {}
 
   private:
     static std::function<float()> life_span_lambda() {
@@ -74,31 +89,6 @@ class SmokeParticleEmitter {
     }
 };
 
-GLuint create_texture_from_data(const TextureData &texture_data) {
-    GLuint texture_id;
-    glGenTextures(1, &texture_id);
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-
-    // Load the texture data into OpenGL
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture_data.width, texture_data.height, 0,
-                 texture_data.num_components == 4 ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, texture_data.image_data.data());
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    glBindTexture(GL_TEXTURE_2D, 0); // Unbind the texture
-
-    return texture_id;
-}
-
-// Wrapper that automatically creates a lambda for member functions
-template <typename T, typename R, typename... Args> auto wrap_member_function(T &obj, R (T::*f)(Args...)) {
-    // Return a std::function that wraps the member function in a lambda
-    return std::function<R(Args...)>{[&obj, f](Args &&...args) { return (obj.*f)(std::forward<Args>(args)...); }};
-}
-
 int main() {
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     console_sink->set_level(spdlog::level::debug);
@@ -108,39 +98,62 @@ int main() {
     unsigned int height_px = 800;
     bool fullscreen = false;
 
-    GLFWwindow *window =
-        initialize_glfw_glad_and_return_window(width_px, height_px, "mwe particle emitter", fullscreen, false, false);
+    Window window;
+    window.initialize_glfw_glad_and_return_window(width_px, height_px, "mwe particle emitter", fullscreen, false,
+                                                  false);
 
-    FPSCamera camera(glm::vec3(0, 0, 3), 50, width_px, height_px, 90, 0.1, 50);
-    std::function<void(unsigned int)> char_callback = [](unsigned int _) {};
-    std::function<void(int, int, int, int)> key_callback = [](int _, int _1, int _2, int _3) {};
-    std::function<void(double, double)> mouse_pos_callback = wrap_member_function(camera, &FPSCamera::mouse_callback);
-    std::function<void(int, int, int)> mouse_button_callback = [](int _, int _1, int _2) {};
-    GLFWLambdaCallbackManager glcm(window, char_callback, key_callback, mouse_pos_callback, mouse_button_callback);
+    InputState input_state;
 
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // Hide and capture the mouse
+    FPSCamera fps_camera;
 
-    TextureData texture_data = load_texture_from_file("assets/smoke_64px.png");
-    GLuint texture_id = create_texture_from_data(texture_data);
+    std::function<void(unsigned int)> char_callback = [](unsigned int codepoint) {};
+    std::function<void(int, int, int, int)> key_callback = [&](int key, int scancode, int action, int mods) {
+        input_state.glfw_key_callback(key, scancode, action, mods);
+    };
+    std::function<void(double, double)> mouse_pos_callback = [&](double xpos, double ypos) {
+        fps_camera.mouse_callback(xpos, ypos);
+    };
+    std::function<void(int, int, int)> mouse_button_callback = [](int button, int action, int mods) {};
+    std::function<void(int, int)> frame_buffer_size_callback = [](int width, int height) {};
+    GLFWLambdaCallbackManager glcm(window.glfw_window, char_callback, key_callback, mouse_pos_callback,
+                                   mouse_button_callback, frame_buffer_size_callback);
+
+    glfwSetInputMode(window.glfw_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // Hide and capture the mouse
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    /*glBlendFunc(GL_SRC_ALPHA, GL_ONE);*/
-    glBindTexture(GL_TEXTURE_2D, texture_id);
 
     auto requested_shaders = {ShaderType::TEXTURE_PACKER_CWL_V_TRANSFORMATION_UBOS_1024};
     ShaderCache shader_cache(requested_shaders, sinks);
     Batcher batcher(shader_cache);
 
-    TexturePacker texture_packer("assets/packed_textures/packed_texture.json",
-                                 {"assets/packed_textures/packed_texture_0.png"});
+    ResourcePath rp(false);
+
+    const auto textures_directory = std::filesystem::path("assets");
+    std::filesystem::path output_dir = std::filesystem::path("assets") / "packed_textures";
+    int container_side_length = 1024;
+
+    TexturePacker texture_packer(textures_directory, output_dir, container_side_length);
+    shader_cache.set_uniform(ShaderType::TEXTURE_PACKER_CWL_V_TRANSFORMATION_UBOS_1024,
+                             ShaderUniformVariable::PACKED_TEXTURE_BOUNDING_BOXES, 1);
 
     auto vertices = generate_square_vertices(0, 0, 0.5);
     auto indices = generate_rectangle_indices();
-    std::vector<glm::vec2> local_uvs = generate_rectangle_texture_coordinates();
-    auto texture_coordinates = texture_packer.get_packed_texture_coordinates("assets/smoke_64px.png", local_uvs);
-    auto pt_idx = texture_packer.get_packed_texture_index_of_texture("assets/smoke_64px.png");
-    std::vector<int> pt_idxs(4, pt_idx); // 4 because square
 
+    // TODO: need to use gfp here?
+    auto smoke_filepath = "assets/smoke_64px.png";
+    auto smoke_st = texture_packer.get_packed_texture_sub_texture(smoke_filepath);
+
+    std::cout << "smoking: " << smoke_st << std::endl;
+
+    draw_info::IVPTexturePacked smoke_ivptp(
+        indices, vertices, smoke_st.texture_coordinates, smoke_st.texture_coordinates, smoke_st.packed_texture_index,
+        smoke_st.packed_texture_bounding_box_index, smoke_filepath,
+        batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.object_id_generator.get_id());
+
+    draw_info::TransformedIVPTPGroup smoke_tig_for_copying({smoke_ivptp}, -1);
+
+    BoundedUniqueIDGenerator ltw_object_id_generator(1024);
     GLuint ltw_matrices_gl_name;
     glm::mat4 ltw_matrices[1024];
 
@@ -154,19 +167,49 @@ int main() {
     glBufferData(GL_UNIFORM_BUFFER, sizeof(ltw_matrices), ltw_matrices, GL_STATIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, ltw_matrices_gl_name);
 
-    SmokeParticleEmitter spe(1000);
+    // TODO: thinking about batcher index vs ltw index
+
+    std::unordered_map<int, draw_info::TransformedIVPTPGroup> particle_id_to_tig;
+
+    std::function<void(int)> on_particle_spawn = [&](int particle_id) {
+        p(std::format("spawning particle: {}", particle_id));
+        auto smoke_tig_copy = smoke_tig_for_copying;
+        smoke_tig_copy.regenerate_ids(
+            ltw_object_id_generator,
+            batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.object_id_generator);
+
+        particle_id_to_tig[particle_id] = smoke_tig_copy;
+    };
+
+    std::function<void(int)> on_particle_death = [&](int particle_id) {
+        p(std::format("deleting particle: {}", particle_id));
+        auto particle_tig = particle_id_to_tig[particle_id];
+        ltw_object_id_generator.reclaim_id(particle_tig.id);
+
+        for (const auto &ivptp : particle_tig.ivptps) {
+            batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.delete_object(ivptp.id);
+        }
+
+        particle_id_to_tig.erase(particle_id);
+    };
+    SmokeParticleEmitter spe(on_particle_spawn, on_particle_death);
 
     double previous_time = glfwGetTime();
-    while (not glfwWindowShouldClose(window)) {
+    while (not glfwWindowShouldClose(window.glfw_window)) {
         double current_time = glfwGetTime();
         double delta_time = current_time - previous_time;
         previous_time = current_time;
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        camera.process_input(window, delta_time);
 
-        glm::mat4 projection = camera.get_projection_matrix();
-        glm::mat4 view = camera.get_view_matrix();
+        fps_camera.process_input(input_state.is_pressed(EKey::LEFT_CONTROL), input_state.is_pressed(EKey::TAB),
+                                 input_state.is_pressed(EKey::w), input_state.is_pressed(EKey::a),
+                                 input_state.is_pressed(EKey::s), input_state.is_pressed(EKey::d),
+                                 input_state.is_pressed(EKey::SPACE), input_state.is_pressed(EKey::LEFT_SHIFT),
+                                 delta_time);
+
+        glm::mat4 projection = fps_camera.get_projection_matrix(width_px, height_px);
+        glm::mat4 view = fps_camera.get_view_matrix();
 
         shader_cache.set_uniform(ShaderType::TEXTURE_PACKER_CWL_V_TRANSFORMATION_UBOS_1024,
                                  ShaderUniformVariable::CAMERA_TO_CLIP, projection);
@@ -176,12 +219,13 @@ int main() {
         spe.particle_emitter.update(delta_time, projection * view);
         auto particles = spe.particle_emitter.get_particles_sorted_by_distance();
 
+        // don't need for loop anymore
         for (size_t i = 0; i < particles.size(); ++i) {
             auto &curr_particle = particles[i];
 
             //  compute the up vector (assuming we want it to be along the y-axis)
             glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-            glm::vec3 forward = camera.transform.compute_forward_vector();
+            glm::vec3 forward = fps_camera.transform.compute_forward_vector();
 
             glm::vec3 right = glm::normalize(glm::cross(up, forward));
 
@@ -197,18 +241,17 @@ int main() {
             transform *= rotation_matrix;
             transform = glm::scale(transform, curr_particle.transform.scale);
 
-            ltw_matrices[i] = transform;
+            auto tig = particle_id_to_tig[curr_particle.id];
 
-            if (curr_particle.is_alive()) {
+            ltw_matrices[tig.id] = transform;
 
-                /*auto nv =*/
-                /*    generate_rectangle_vertices_3d(particle.transform.position,
-                 * camera.transform.compute_right_vector(),*/
-                /*                                   camera.transform.compute_up_vector(), 1, 1);*/
-
-                std::vector<unsigned int> ltw_mat_idxs(4, i);
+            for (const auto &ivptp : tig.ivptps) {
+                std::vector<unsigned int> ltw_mat_idxs(ivptp.xyz_positions.size(), tig.id);
+                std::vector<int> ptis(ivptp.xyz_positions.size(), ivptp.packed_texture_index);
+                std::vector<int> ptbbis(ivptp.xyz_positions.size(), ivptp.packed_texture_bounding_box_index);
                 batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.queue_draw(
-                    indices, vertices, ltw_mat_idxs, pt_idxs, texture_coordinates);
+                    ivptp.id, ivptp.indices, ltw_mat_idxs, ptis, ivptp.packed_texture_coordinates, ptbbis,
+                    ivptp.xyz_positions, false);
             }
         }
 
@@ -219,7 +262,8 @@ int main() {
 
         batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.draw_everything();
 
-        glfwSwapBuffers(window);
+        glfwSwapBuffers(window.glfw_window);
         glfwPollEvents();
+        TemporalBinarySignal::process_all();
     }
 }

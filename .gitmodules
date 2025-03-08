@@ -49,3 +49,27 @@
 [submodule "assets/texture_packer"]
 	path = assets/texture_packer
 	url = git@github.com:py-garden/texture_packer.git
+[submodule "src/utility/unique_id_generator"]
+	path = src/utility/unique_id_generator
+	url = git@github.com:cpp-toolbox/unique_id_generator.git
+[submodule "src/graphics/draw_info"]
+	path = src/graphics/draw_info
+	url = git@github.com:cpp-toolbox/draw_info.git
+[submodule "src/utility/resource_path"]
+	path = src/utility/resource_path
+	url = git@github.com:cpp-toolbox/resource_path.git
+[submodule "src/utility/fs_utils"]
+	path = src/utility/fs_utils
+	url = git@github.com:cpp-toolbox/fs_utils.git
+[submodule "src/utility/print_utils"]
+	path = src/utility/print_utils
+	url = git@github.com:cpp-toolbox/print_utils.git
+[submodule "src/input/input_state"]
+	path = src/input/input_state
+	url = git@github.com:cpp-toolbox/input_state.git
+[submodule "src/utility/temporal_binary_signal"]
+	path = src/utility/temporal_binary_signal
+	url = git@github.com:cpp-toolbox/temporal_binary_signal.git
+[submodule "src/utility/expiring_temporal_vector"]
+	path = src/utility/expiring_temporal_vector
+	url = git@github.com:cpp-toolbox/expiring_temporal_vector.git
