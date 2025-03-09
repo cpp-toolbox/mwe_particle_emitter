@@ -73,3 +73,9 @@
 [submodule "src/utility/expiring_temporal_vector"]
 	path = src/utility/expiring_temporal_vector
 	url = git@github.com:cpp-toolbox/expiring_temporal_vector.git
+[submodule "src/utility/rate_limiter"]
+	path = src/utility/rate_limiter
+	url = git@github.com:cpp-toolbox/rate_limiter.git
+[submodule "src/graphics/batcher_x_particle_emitter_logic"]
+	path = src/graphics/batcher_x_particle_emitter_logic
+	url = git@github.com:cpp-toolbox/batcher_x_particle_emitter_logic.git
