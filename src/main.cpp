@@ -1,3 +1,4 @@
+#include "graphics/batcher_x_particle_emitter_logic/batcher_x_particle_emitter_logic.hpp"
 #include "utility/unique_id_generator/unique_id_generator.hpp"
 #include <random>
 
@@ -137,61 +138,18 @@ int main() {
     shader_cache.set_uniform(ShaderType::TEXTURE_PACKER_CWL_V_TRANSFORMATION_UBOS_1024,
                              ShaderUniformVariable::PACKED_TEXTURE_BOUNDING_BOXES, 1);
 
-    auto vertices = generate_square_vertices(0, 0, 0.5);
-    auto indices = generate_rectangle_indices();
-
-    // TODO: need to use gfp here?
-    auto smoke_filepath = "assets/smoke_64px.png";
-    auto smoke_st = texture_packer.get_packed_texture_sub_texture(smoke_filepath);
-
-    std::cout << "smoking: " << smoke_st << std::endl;
-
-    draw_info::IVPTexturePacked smoke_ivptp(
-        indices, vertices, smoke_st.texture_coordinates, smoke_st.texture_coordinates, smoke_st.packed_texture_index,
-        smoke_st.packed_texture_bounding_box_index, smoke_filepath,
-        batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.object_id_generator.get_id());
-
-    draw_info::TransformedIVPTPGroup smoke_tig_for_copying({smoke_ivptp}, -1);
-
-    BoundedUniqueIDGenerator ltw_object_id_generator(1024);
-    GLuint ltw_matrices_gl_name;
-    glm::mat4 ltw_matrices[1024];
-
-    // initialize all matrices to identity matrices
-    for (int i = 0; i < 1024; ++i) {
-        ltw_matrices[i] = glm::mat4(1.0f);
-    }
-
-    glGenBuffers(1, &ltw_matrices_gl_name);
-    glBindBuffer(GL_UNIFORM_BUFFER, ltw_matrices_gl_name);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(ltw_matrices), ltw_matrices, GL_STATIC_DRAW);
-    glBindBufferBase(GL_UNIFORM_BUFFER, 0, ltw_matrices_gl_name);
-
-    // TODO: thinking about batcher index vs ltw index
-
-    std::unordered_map<int, draw_info::TransformedIVPTPGroup> particle_id_to_tig;
+    BatcherXParticleEmitterLogic batcher_x_particle_emitter_logic(
+        texture_packer, batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.ltw_object_id_generator,
+        batcher);
 
     std::function<void(int)> on_particle_spawn = [&](int particle_id) {
-        p(std::format("spawning particle: {}", particle_id));
-        auto smoke_tig_copy = smoke_tig_for_copying;
-        smoke_tig_copy.regenerate_ids(
-            ltw_object_id_generator,
-            batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.object_id_generator);
-
-        particle_id_to_tig[particle_id] = smoke_tig_copy;
+        batcher_x_particle_emitter_logic.on_particle_spawn(particle_id);
     };
 
     std::function<void(int)> on_particle_death = [&](int particle_id) {
-        p(std::format("deleting particle: {}", particle_id));
-        auto particle_tig = particle_id_to_tig[particle_id];
-        ltw_object_id_generator.reclaim_id(particle_tig.id);
-
-        for (const auto &ivptp : particle_tig.ivptps) {
-            batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.delete_object(ivptp.id);
-        }
-
-        particle_id_to_tig.erase(particle_id);
+        batcher_x_particle_emitter_logic.on_particle_death(particle_id);
     };
+
     SmokeParticleEmitter spe(on_particle_spawn, on_particle_death);
 
     double previous_time = glfwGetTime();
@@ -216,50 +174,10 @@ int main() {
         shader_cache.set_uniform(ShaderType::TEXTURE_PACKER_CWL_V_TRANSFORMATION_UBOS_1024,
                                  ShaderUniformVariable::WORLD_TO_CAMERA, view);
 
-        spe.particle_emitter.update(delta_time, projection * view);
-        auto particles = spe.particle_emitter.get_particles_sorted_by_distance();
-
-        // don't need for loop anymore
-        for (size_t i = 0; i < particles.size(); ++i) {
-            auto &curr_particle = particles[i];
-
-            //  compute the up vector (assuming we want it to be along the y-axis)
-            glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-            glm::vec3 forward = fps_camera.transform.compute_forward_vector();
-
-            glm::vec3 right = glm::normalize(glm::cross(up, forward));
-
-            up = glm::normalize(glm::cross(forward, right));
-
-            // this makes it billboarded
-            glm::mat4 rotation_matrix = glm::mat4(1.0f);
-            rotation_matrix[0] = glm::vec4(right, 0.0f);
-            rotation_matrix[1] = glm::vec4(up, 0.0f);
-            rotation_matrix[2] = glm::vec4(-forward, 0.0f); // We negate the direction for correct facing
-
-            glm::mat4 transform = glm::translate(glm::mat4(1.0f), curr_particle.transform.position);
-            transform *= rotation_matrix;
-            transform = glm::scale(transform, curr_particle.transform.scale);
-
-            auto tig = particle_id_to_tig[curr_particle.id];
-
-            ltw_matrices[tig.id] = transform;
-
-            for (const auto &ivptp : tig.ivptps) {
-                std::vector<unsigned int> ltw_mat_idxs(ivptp.xyz_positions.size(), tig.id);
-                std::vector<int> ptis(ivptp.xyz_positions.size(), ivptp.packed_texture_index);
-                std::vector<int> ptbbis(ivptp.xyz_positions.size(), ivptp.packed_texture_bounding_box_index);
-                batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.queue_draw(
-                    ivptp.id, ivptp.indices, ltw_mat_idxs, ptis, ivptp.packed_texture_coordinates, ptbbis,
-                    ivptp.xyz_positions, false);
-            }
-        }
+        batcher_x_particle_emitter_logic.draw_particles(spe.particle_emitter, fps_camera, delta_time, projection, view);
 
         // load in the matrices
-        glBindBuffer(GL_UNIFORM_BUFFER, ltw_matrices_gl_name);
-        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(ltw_matrices), ltw_matrices);
-        glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
+        batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.upload_ltw_matrices();
         batcher.texture_packer_cwl_v_transformation_ubos_1024_shader_batcher.draw_everything();
 
         glfwSwapBuffers(window.glfw_window);
